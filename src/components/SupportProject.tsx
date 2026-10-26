@@ -43,8 +43,8 @@ function SupportDialog({ onClose }: { onClose: () => void }) {
 export default function SupportProject() {
   const [open, setOpen] = useState(false);
   return <>
-    <button id="support-project-button" type="button" onClick={() => setOpen(true)} aria-haspopup="dialog" aria-expanded={open} className="fixed right-4 bottom-[max(16px,env(safe-area-inset-bottom))] z-40 flex min-h-11 items-center gap-2 rounded-full border border-[#e8eaed] bg-white px-4 text-[13px] font-medium text-[#202124] shadow-[0_4px_20px_rgba(32,33,36,0.12)] transition-colors hover:border-[#f0beb5] hover:bg-[#fff7f5] sm:right-6 sm:bottom-6 print:hidden">
-      <Heart className="h-4 w-4 fill-[#fce3dd] text-[#d64d3c]" aria-hidden="true" />Support us
+    <button id="support-project-button" type="button" onClick={() => setOpen(true)} aria-haspopup="dialog" aria-expanded={open} className="fixed right-4 bottom-[max(16px,env(safe-area-inset-bottom))] z-40 flex min-h-14 items-center gap-3 rounded-full border border-[#ffc6b8] bg-[#b93822] px-6 text-base font-semibold text-white shadow-[0_6px_24px_rgba(185,56,34,0.3)] transition-colors hover:bg-[#a02e1b] active:bg-[#872615] sm:right-6 sm:bottom-6 sm:min-h-16 sm:px-7 sm:text-lg print:hidden">
+      <Heart className="h-6 w-6 fill-white/20 text-white sm:h-7 sm:w-7" aria-hidden="true" />Support us
     </button>
     {open && <SupportDialog onClose={() => setOpen(false)} />}
   </>;
