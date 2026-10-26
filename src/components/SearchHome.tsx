@@ -6,6 +6,7 @@ import BakyAiPill from './BakyAiPill';
 import bakyLogo from '../assets/baky-one-256.png';
 import { useVoiceSearch } from './useVoiceSearch';
 import MobileHomeFeed from './MobileHomeFeed';
+import SupportProject from './SupportProject';
 
 export function BakyOneLogo({ className = 'w-10 h-10' }: { className?: string }) {
   return (
@@ -63,7 +64,7 @@ export default function SearchHome({
   return (
     <div
       id="search-home-container"
-      className="min-h-screen w-full flex flex-col items-center bg-white text-[#202124] select-text"
+      className="min-h-screen w-full flex flex-col items-center bg-white pb-20 text-[#202124] select-text sm:pb-0"
       style={{ fontFamily: 'Arial, Roboto, Helvetica, sans-serif' }}
     >
       <header
@@ -281,6 +282,7 @@ export default function SearchHome({
       <footer className="mt-auto hidden w-full py-4 text-center text-[11px] sm:block sm:text-xs text-[#70757a] select-none shrink-0 opacity-80">
         Baky One • Vyhľadávanie bez ukladania histórie dotazov
       </footer>
+      <SupportProject />
     </div>
   );
 }

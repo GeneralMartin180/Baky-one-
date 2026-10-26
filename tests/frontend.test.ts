@@ -68,6 +68,59 @@ const marketQuote = (symbol = 'MSFT', overrides: Record<string, unknown> = {}) =
   updatedAt: '2026-10-23T20:00:00Z', url: `https://finance.yahoo.com/quote/${encodeURIComponent(symbol)}/`, status: 'available', ...overrides,
 });
 
+test('project support copies the exact supplied IBAN only after clipboard success and handles unavailable clipboard', async () => {
+  const { default: SupportProject } = await loadComponent('src/components/SupportProject.tsx');
+  const env = await setup();
+  try {
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: undefined });
+    await act(async () => env.root.render(React.createElement(SupportProject)));
+    const trigger = document.querySelector('#support-project-button') as HTMLButtonElement;
+    trigger.focus();
+    await act(async () => trigger.click());
+    const dialog = document.querySelector('[role="dialog"]')!;
+    assert.match(dialog.textContent!, /SK89 0200 0000 0072 8156 1753/);
+    const copy = Array.from(dialog.querySelectorAll('button')).find(button => button.textContent === 'Skopírovať IBAN')!;
+    await act(async () => copy.click());
+    assert.match(document.querySelector('[role="alert"]')!.textContent!, /Označ a skopíruj IBAN/);
+    assert.doesNotMatch(copy.textContent!, /skopírovaný/);
+    const writes: string[] = [];
+    let finishCopy!: () => void;
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: (value: string) => { writes.push(value); return new Promise<void>(resolve => { finishCopy = resolve; }); } } });
+    await act(async () => copy.click());
+    assert.deepEqual(writes, ['SK8902000000007281561753']);
+    assert.equal(copy.disabled, true);
+    assert.doesNotMatch(copy.textContent!, /skopírovaný/);
+    await act(async () => finishCopy());
+    assert.equal(copy.textContent!.trim(), 'IBAN skopírovaný');
+    assert.equal(document.querySelector('[role="alert"]'), null);
+    await act(async () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
+    assert.equal(document.querySelector('[role="dialog"]'), null);
+    assert.equal(document.activeElement, trigger);
+    await act(async () => trigger.click());
+    assert.doesNotMatch(document.querySelector('[role="dialog"]')!.textContent!, /IBAN skopírovaný/);
+  } finally { await env.close(); }
+});
+
+test('support entry appears only on the homepage on both mobile and desktop', async () => {
+  const { default: App } = await loadComponent('src/App.tsx');
+  for (const mobile of [false, true]) {
+    const env = await setup(); mobileViewport(mobile);
+    globalThis.fetch = (async () => response({ results: [hit('Test')], hasMore: false, quotes: [], items: [] })) as any;
+    try {
+      await act(async () => env.root.render(React.createElement(App))); await tick();
+      assert.ok(document.querySelector('#support-project-button'));
+      const input = document.querySelector('#search-home-input') as HTMLInputElement;
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!.call(input, 'test');
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      });
+      await act(async () => document.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))); await tick();
+      assert.ok(document.querySelector('#search-results-page'));
+      assert.equal(document.querySelector('#support-project-button'), null);
+    } finally { await env.close(); }
+  }
+});
+
 test('mobile homepage loads markets and regional news, links AI Mode to Baky AI and leaves the keyboard closed', async () => {
   const { default: SearchHome } = await loadComponent('src/components/SearchHome.tsx');
   const env = await setup(); mobileViewport();
