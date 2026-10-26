@@ -186,7 +186,6 @@ export default function SearchResults({ initialQuery, initialTab = 'all', search
           {!loading && !visible.error && visible.correctedQuery && <p className="mb-4 text-sm text-[#5f6368]" aria-live="polite">Výsledky pre <button type="button" onClick={() => submitQuery(visible.correctedQuery!)} className="text-[#1a0dab] hover:underline">{visible.correctedQuery}</button></p>}
           {loading && <div role="status" className="flex gap-3 py-12 items-center text-[#5f6368]"><Loader2 className="w-5 h-5 animate-spin text-[#1a73e8]" />Vyhľadávam „{initialQuery}“…</div>}
           {!loading && visible.error && <div role="alert" className="p-4 bg-red-50 border border-red-200 text-red-800 rounded-xl mb-5"><p>{visible.error}</p><button type="button" onClick={() => setRefresh((value) => value + 1)} className="underline mt-2 text-sm">Skúsiť znova</button></div>}
-          {!loading && !visible.error && visible.degraded && resultCount > 0 && <p role="status" className="mb-5 p-3 bg-amber-50 text-amber-900 rounded-xl text-sm">Niektoré zdroje sú dočasne nedostupné. Výsledky môžu byť neúplné.</p>}
           {!loading && !visible.error && <>
             {activeTab === 'all' && <div id="all-results-view">
               {visible.results[0] && <SearchResultItem item={visible.results[0]} settings={settings} index={0} />}
