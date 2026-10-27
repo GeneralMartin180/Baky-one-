@@ -122,7 +122,9 @@ test('one bounded fallback retry recovers a transient provider error', async () 
   const data = await searchWeb('NASA Artemis', 1, {}, {
     overview: async () => null,
     fetch: async (input, options) => {
-      if (new URL(input).hostname !== 'search.seznam.cz') return new Response('blocked', { status: 429 });
+      const url = new URL(input);
+      if (url.hostname !== 'search.seznam.cz') return new Response('blocked', { status: 429 });
+      if (url.searchParams.has('from')) return new Response(empty);
       attempts++; timeouts.push(options!.timeoutMs!);
       return attempts === 1 ? new Response('unavailable', { status: 503 }) : new Response(organic);
     },

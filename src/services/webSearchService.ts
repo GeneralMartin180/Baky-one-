@@ -259,9 +259,9 @@ export async function searchWeb(query: string, page = 1, partialOptions: Partial
     return rows.length < targetCount || (!explicitSite && hosts.size < 5);
   };
   let supplementalFailure = false;
-  // A failed opening response already used its retry budget. Genuine empty
-  // searches are final and must not cause repeated upstream requests either.
-  if (firstFallback && fallbackFailure?.status === 'fulfilled') {
+  // A recovered opening page can still be sparse. Its successful retry gets
+  // the same bounded fill as an immediate success; genuine empty pages do not.
+  if (firstFallback) {
     for (let offset = 10; offset <= 30 && needsMore(); offset += 20) {
       const extra = await Promise.allSettled([offset, offset + 10].map(from => {
         const provider = providers[fallbackIndex];

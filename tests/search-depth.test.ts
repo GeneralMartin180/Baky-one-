@@ -98,3 +98,23 @@ test('pagination uses the same candidate pool even when a later provider page ha
   assert.equal(second.hasMore, false);
   assert.ok(second.results.every(row => !first.results.some(prior => prior.url === row.url)));
 });
+
+test('a recovered sparse opening page gets the same real-result fill as an immediate success', async () => {
+  let openingAttempts = 0;
+  const offsets: number[] = [];
+  const data = await searchWeb('quantum sensor', 1, {}, {
+    overview: async () => null,
+    fetch: async input => {
+      const url = new URL(input);
+      if (url.hostname !== 'search.seznam.cz') return new Response('blocked', { status: 429 });
+      const from = Number(url.searchParams.get('from') || 0);
+      if (!from && ++openingAttempts === 1) return new Response('unavailable', { status: 503 });
+      offsets.push(from);
+      return new Response(from ? organic(from, 10) : organic(0, 3));
+    },
+  });
+  assert.equal(openingAttempts, 2);
+  assert.deepEqual(offsets, [0, 10, 20]);
+  assert.equal(data.results.length, 10);
+  assert.equal(data.hasMore, true);
+});
