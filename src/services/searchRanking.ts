@@ -44,7 +44,9 @@ export function canonicalResultUrl(value: string, base = 'https://www.bing.com')
     if (/(^|\.)bing\.com$/i.test(host) && (/^\/(?:search|aclick|ck|fd\/ls)(?:\/|$)/i.test(url.pathname) || /^\/(?:images|videos|news)\/search(?:\/|$)/i.test(url.pathname) || url.searchParams.has('q'))) return null;
     if (host === 'localhost' || host.endsWith('.local') || /^127\./.test(host)) return null;
     url.hash = '';
-    for (const name of [...url.searchParams.keys()]) if (TRACKING_PARAMS.test(name)) url.searchParams.delete(name);
+    for (const name of [...url.searchParams.keys()]) {
+      if (TRACKING_PARAMS.test(name) || (/(^|\.)linkedin\.com$/i.test(host) && name.toLowerCase() === 'trk')) url.searchParams.delete(name);
+    }
     url.searchParams.sort();
     return url.href;
   } catch { return null; }
@@ -169,7 +171,7 @@ export function rankProviderResults(pages: ProviderResult[], query: string): Ran
       const titleCoverage = terms.length ? titleHits / terms.length : 0;
       const hostHint = Boolean(original.host && hostMatches(host, original.host));
       const brand = terms.length && terms.every(token => /^\p{L}+$/u.test(token)) ? joined || (terms.length === 1 ? terms[0] : undefined) : undefined;
-      const exactBrandHost = Boolean(brand && term(brandLabel(host)) === brand);
+      const exactBrandHost = Boolean(brand && host === resultDomain(host) && term(brandLabel(host)) === brand);
       const phrase = words(parsedQuery.prose).join(' ');
       const exactTitle = Boolean(phrase && ` ${titleWords.join(' ')} `.includes(` ${phrase} `));
       const offset = ('offset' in page && typeof page.offset === 'number') ? page.offset : 0;
@@ -203,6 +205,22 @@ export function rankProviderResults(pages: ProviderResult[], query: string): Ran
     return brand && candidate.host === candidate.domain && term(brandLabel(candidate.host)) === brand && url.pathname === '/';
   }).sort((a, b) => b.score - a.score)[0];
   if (brandPage) {
+    const brand = term(brandLabel(brandPage.host));
+    const templateTerms = new Set('app apps application applications project projects generated site website web page template welcome created built powered by'.split(' ').map(term));
+    for (let index = candidates.length - 1; index >= 0; index--) {
+      const candidate = candidates[index];
+      if (candidate === brandPage || candidate.host === brandPage.host) continue;
+      const title = words(candidate.result.title).map(term);
+      const description = words(candidate.result.snippet).map(term);
+      const genericTitle = title.includes(brand) && title.every(token => token === brand || templateTerms.has(token));
+      const genericMetadata = [...title, ...description].every(token => token === brand || templateTerms.has(token));
+      const hostedTenant = candidate.host !== candidate.domain && candidate.domain !== brandPage.domain && term(brandLabel(candidate.host)) === brand;
+      const brandDescription = description.includes(brand) && description.some(token => token !== brand && !templateTerms.has(token));
+      // Tenant projects inheriting the platform's default title are not a
+      // destination for a brand-only query. Described brand resources remain.
+      if (genericTitle && (genericMetadata || (hostedTenant && !brandDescription))) candidates.splice(index, 1);
+      else if (candidate.domain === brandPage.domain) candidate.score += 24;
+    }
     const officialDescription = words(brandPage.result.snippet);
     // A long copied introduction on another domain adds no independent result.
     // Only an actual brand homepage can establish which destination to retain.
@@ -217,7 +235,19 @@ export function rankProviderResults(pages: ProviderResult[], query: string): Ran
       }
     }
     const context = [...brandPage.titleTerms, ...words(brandPage.result.snippet).map(term)].filter(token => token.length >= 4 && !STOP_WORDS.has(token) && !INTENT_WORDS.has(token) && !original.terms.includes(token));
-    for (const candidate of candidates) if (candidate !== brandPage) candidate.score += Math.min(12, [...new Set(context)].filter(token => candidate.textTerms.has(token)).length * 3);
+    for (const candidate of candidates) {
+      if (candidate === brandPage) continue;
+      candidate.score += Math.min(12, [...new Set(context)].filter(token => candidate.textTerms.has(token)).length * 3);
+      if (candidate.domain === brandPage.domain || original.host || original.scopes.length) continue;
+      const url = new URL(candidate.result.url);
+      // A store's search form is weaker evidence than a page about the brand.
+      const searchLanding = [...url.searchParams].some(([name, value]) => /^(?:q|query|search|s|h\[fraze\])$/i.test(name) && term(words(value).join('')) === brand);
+      if (searchLanding) candidate.score -= 24;
+      // Ratings and years often signal another work with the same short name.
+      // Keep such pages available, but prioritize the brand's own subject.
+      const extraNumbers = words(candidate.result.title).filter(token => /^\d+$/.test(token) && !original.terms.includes(token));
+      if (extraNumbers.length >= 2 || extraNumbers.some(token => /^(?:19|20)\d{2}$/.test(token))) candidate.score -= 18;
+    }
   }
   const ordered: Candidate[] = [];
   const counts = new Map<string, number>();

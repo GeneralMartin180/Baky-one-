@@ -104,3 +104,41 @@ test('an existing brand homepage suppresses long copied mirror descriptions whil
   assert.deepEqual(new Set(results.map(result => result.url)), new Set([official.url, review.url, partial.url]));
   assert.equal(rank('duck duck go', [mirror, review]).length, 2, 'without an actual brand homepage no destination can be classified as a copied mirror');
 });
+
+test('brand navigation favors the actual platform domain over hosted projects with default template titles', () => {
+  const official = item('Lovable', 'https://lovable.dev/', 'Build applications and websites with Lovable.');
+  const blank = item('Lovable App', 'https://gjshackathon.lovable.app/', 'Lovable Generated Project');
+  const wine = item('Lovable App', 'https://vinotekamohelniceneumannova.lovable.app/', 'Online wine shop showcasing Czech wines with a modern, user-friendly interface.');
+  const docs = item('Lovable documentation', 'https://docs.lovable.dev/', 'Guides to building applications with Lovable.');
+  const resource = item('Lovable App', 'https://learning.lovable.app/', 'Independent Lovable tutorials and examples for building applications.');
+  const namedProject = item('Recipe planner built with Lovable', 'https://recipes.lovable.app/', 'A useful recipe planning application.');
+  const review = item('Lovable review', 'https://reviews.example/lovable', 'An independent review of the application building platform.');
+  const results = rank('lovable', [blank, wine, official, docs, resource, namedProject, review]);
+  assert.equal(results[0].url, official.url);
+  assert.deepEqual(new Set(results.map(result => result.url)), new Set([official.url, docs.url, resource.url, namedProject.url, review.url]));
+  assert.ok(rank('lovable app', [blank, wine, official]).some(result => result.url === wine.url), 'a more specific project query retains matching hosted applications');
+  assert.ok(rank('lovable', [blank, wine]).some(result => result.url === wine.url), 'no template suppression without a brand homepage');
+});
+
+test('LinkedIn campaign tracking does not create another company result', () => {
+  const clean = item('Lovable company', 'https://www.linkedin.com/company/lovable-dev/');
+  const tracked = item('Lovable company', 'https://www.linkedin.com/company/lovable-dev/?trk=public_profile');
+  assert.deepEqual(rank('lovable', [clean, tracked]).map(result => result.url), [clean.url]);
+  assert.equal(canonicalResultUrl('https://docs.example/guide?trk=document'), 'https://docs.example/guide?trk=document');
+});
+
+test('brand navigation prefers actual reviews over store searches and numbered namesakes', () => {
+  const official = item('Acme app builder', 'https://acme.dev/', 'Build software and websites with Acme.');
+  const store = item('Acme shopping', 'https://store.example/?q=acme', 'Find Acme products at many stores.');
+  const namesake = item('Acme 55% (2022)', 'https://films.example/acme', 'A film with the same name.');
+  const review = item('Acme review', 'https://reviews.example/acme', 'Build websites with the Acme software platform.');
+  const other = item('Acme platform guide', 'https://guides.example/acme', 'An independent Acme tutorial.');
+  const rows = rank('acme', [store, namesake, official, review, other]);
+  assert.equal(rows[0].url, official.url);
+  const position = (url: string) => rows.findIndex(row => row.url === url);
+  assert.ok(position(review.url) < position(store.url));
+  assert.ok(position(other.url) < position(namesake.url));
+  assert.equal(rows.length, 5, 'alternative meanings remain available');
+  const numbered = item('Acme 55 review', 'https://reviews.example/acme-55');
+  assert.deepEqual(rank('acme 55', [official, numbered]), [numbered]);
+});

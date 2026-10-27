@@ -35,6 +35,7 @@ try {
       assert.equal(new URL(body.results[0].url).hostname.replace(/^www\./, ''), officialHosts[query], `${query}: official destination must lead`);
       assert.ok(new Set(body.results.map(r => new URL(r.url).hostname)).size >= 5, `${query}: independent sources missing`);
       assert.ok(body.results.filter(r => /(^|\.)youtube\.com$/.test(new URL(r.url).hostname)).length <= 2, `${query}: video cards displaced web pages`);
+      if (query === 'lovable') assert.ok(body.results.every(r => !(new URL(r.url).hostname.endsWith('.lovable.app') && /^lovable app$/i.test(r.title.trim()))), 'lovable: generic hosted projects displaced platform results');
     }
     assert.match(response.headers.get('cache-control') || '', /no-store/);
   }
