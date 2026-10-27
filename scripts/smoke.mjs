@@ -18,8 +18,8 @@ async function request(route) {
 
 try {
   const health = await request('/api/health'); assert.equal(health.response.status, 200); assert.equal(health.body.status, 'ok');
-  const officialHosts = { 'baky os': 'bakyos.com', yutubez: 'youtube.com', yutube: 'youtube.com', 'space x': 'spacex.com' };
-  for (const query of ['baky os', 'yutubez', 'yutube', 'space x', 'Bratislava', 'javascript array sort', 'počítače', 'počasie Rimavská Sobota', 'ako uvariť ryžu', 'futbal výsledky', 'kde kúpiť notebook']) {
+  const officialHosts = { 'baky os': 'bakyos.com', yutubez: 'youtube.com', yutube: 'youtube.com', 'space x': 'spacex.com', 'duck duck go': 'duckduckgo.com', lovable: 'lovable.dev' };
+  for (const query of ['duck duck go', 'lovable', 'baky os', 'yutubez', 'yutube', 'space x', 'Bratislava', 'javascript array sort', 'počítače', 'počasie Rimavská Sobota', 'ako uvariť ryžu', 'futbal výsledky', 'kde kúpiť notebook']) {
     const { response, body } = await request(`/api/search?${new URLSearchParams({ q: query, safeSearch: '1', region: 'sk' })}`);
     assert.equal(response.status, 200, query);
     const minimum = query in officialHosts ? 1 : 3;
@@ -30,6 +30,12 @@ try {
     assert.ok(body.results.every(r => !/bing\.com\/aclick/.test(r.url)), `${query}: advertisement redirect`);
     if (query === 'javascript array sort') assert.ok(body.results.some(r => /array|sort/i.test(r.title)), 'specific JavaScript documentation missing');
     if (query in officialHosts) assert.ok(body.results.some(r => new URL(r.url).hostname.replace(/^www\./, '') === officialHosts[query]), `${query}: real official page missing`);
+    if (query === 'duck duck go' || query === 'lovable') {
+      assert.ok(body.results.length >= 8, `${query}: first page remains sparse`);
+      assert.equal(new URL(body.results[0].url).hostname.replace(/^www\./, ''), officialHosts[query], `${query}: official destination must lead`);
+      assert.ok(new Set(body.results.map(r => new URL(r.url).hostname)).size >= 5, `${query}: independent sources missing`);
+      assert.ok(body.results.filter(r => /(^|\.)youtube\.com$/.test(new URL(r.url).hostname)).length <= 2, `${query}: video cards displaced web pages`);
+    }
     assert.match(response.headers.get('cache-control') || '', /no-store/);
   }
   const global = await request('/api/search?' + new URLSearchParams({ q: 'NASA Artemis', region: 'global', safeSearch: '1' }));

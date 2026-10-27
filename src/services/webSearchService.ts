@@ -6,18 +6,16 @@ import { serverFetch } from './serverTransport.ts';
 import { fetchWikipediaSummary } from './wikipediaService.ts';
 import { classifySearchResponse } from './searchProviderResponse.ts';
 import { hasKnownSiteMatch, searchKnownSites } from './knownSiteSearch.ts';
-import { isConservativeSpellingCorrection } from './querySpelling.ts';
+import { canonicalResultUrl, rankProviderResults, rankResults, resultDomain } from './searchRanking.ts';
+export { canonicalResultUrl, rankResults } from './searchRanking.ts';
 import { parseProviderSpellingCorrection } from './searchSpellingCorrection.ts';
 
 const PAGE_SIZE = 10;
 const PROVIDER_TIMEOUT_MS = 3400;
 const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
-const STOP_WORDS = new Set('a an the of for to in on and or is how what when where na v vo z zo s so a aj i je su sa si pre do od pri ako co kde kedy preco dnes'.split(' '));
-const TRACKING_PARAMS = /^(utm_|fbclid$|gclid$|msclkid$|yclid$|ref_src$)/i;
-const QUERY_INTENT_WORDS = new Set('kupit koupit nakupit zakupit vybrat najst najit hladat hledat naucit buy buying find learn'.split(' '));
 
 type ProviderName = 'duckduckgo' | 'duckduckgo-lite' | 'bing' | 'seznam' | 'bing-rss' | 'brave' | 'known-sites';
-export interface ProviderResult { source: ProviderName; results: SearchResult[]; correctedQuery?: string }
+export interface ProviderResult { source: ProviderName; results: SearchResult[]; correctedQuery?: string; offset?: number }
 export interface WebSearchResponse {
   results: SearchResult[];
   overview: SearchOverview | null;
@@ -34,43 +32,6 @@ export function normalizeText(value: string): string {
   return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 }
 
-function relevanceTerm(value: string): string {
-  let word = value.replace(/^futbal/, 'fotbal');
-  if (/^ryz[aeiuy]$/.test(word)) return 'ryz';
-  if (/^pocasi(?:e)?$/.test(word)) return 'pocas';
-  // Small inflection changes must not discard Czech/Slovak search results.
-  // Short names and abbreviations remain exact (OS must not match "boss").
-  if (word.length > 5) word = word.replace(/(?:ami|emi|och|ove|ovy|ich|ych|ou|ov|om|em|um|mi|ie|ia|y|i|u|a|e)$/, '');
-  return word;
-}
-
-function relevanceWords(value: string): Set<string> {
-  return new Set((normalizeText(value).match(/[\p{L}\p{N}]+/gu) || []).map(relevanceTerm));
-}
-
-/** Strip advertising redirects/tracking, retaining document-identifying query parameters. */
-export function canonicalResultUrl(value: string, base = 'https://www.bing.com'): string | null {
-  try {
-    let url = new URL(value, base);
-    if (/(^|\.)duckduckgo\.com$/i.test(url.hostname) && url.pathname === '/l/') {
-      const target = url.searchParams.get('uddg');
-      if (!target) return null;
-      url = new URL(target);
-    }
-    if (/(^|\.)bing\.com$/i.test(url.hostname) && url.pathname.startsWith('/ck/')) {
-      const encoded = url.searchParams.get('u');
-      if (!encoded?.startsWith('a1')) return null;
-      url = new URL(Buffer.from(encoded.slice(2), 'base64url').toString('utf8'));
-    }
-    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) return null;
-    if (/(^|\.)(bing\.com|duckduckgo\.com|search\.seznam\.cz|search\.yahoo\.com)$/i.test(url.hostname)) return null;
-    if (url.hostname === 'localhost' || url.hostname.endsWith('.local') || /^127\./.test(url.hostname)) return null;
-    url.hash = '';
-    for (const name of [...url.searchParams.keys()]) if (TRACKING_PARAMS.test(name)) url.searchParams.delete(name);
-    url.searchParams.sort();
-    return url.href;
-  } catch { return null; }
-}
 
 function makeResult(title: string, href: string, snippet: string, source: ProviderName): SearchResult | null {
   const url = canonicalResultUrl(href, source.startsWith('duckduckgo') ? 'https://duckduckgo.com' : 'https://www.bing.com');
@@ -137,16 +98,36 @@ export function parseSeznam(html: string): SearchResult[] {
   const $ = cheerio.load(html);
   const results: SearchResult[] = [];
   const adFamilies = new Set<string>();
+  const moduleScopes = new Set<object>();
+  const relatedHeading = /^(?:lide take hledaji|souvisejici (?:dotazy|vyhledavani|hledani))$/;
   $('h3').each((_, element) => {
-    if (!/^(sponzorovane vysledky|sponsored results|reklama)$/.test(normalizeText($(element).text()).trim())) return;
-    const family = $(element).closest('[data-e-b-n]').attr('data-e-b-n')?.split('~')[0];
-    if (family) adFamilies.add(family);
+    const heading = $(element);
+    const headingText = normalizeText(heading.text()).replace(/\s+/g, ' ').trim();
+    if (/^(sponzorovane vysledky|sponsored results|reklama)$/.test(headingText)) {
+      const family = heading.closest('[data-e-b-n]').attr('data-e-b-n')?.split('~')[0];
+      if (family) adFamilies.add(family);
+    }
+    // Vertical carousels contain their own h3 cards. Their heading links to a
+    // Seznam category, so those cards must not masquerade as organic web rows.
+    const verticalHeading = /^(?:videa|obrazky|zpravy|novinky)(?:\s*[›»:]\s*.+)?$/.test(headingText)
+      && heading.find('a[href]').toArray().some(link => {
+        try {
+          const target = new URL($(link).attr('href') || '', 'https://search.seznam.cz/');
+          return target.hostname === 'search.seznam.cz' && /^\/(?:videa|obrazky|zpravy)\/?$/.test(target.pathname);
+        } catch { return false; }
+      });
+    if (!verticalHeading && !relatedHeading.test(headingText)) return;
+    const scope = heading.closest('[data-e-b-n], section, article, [role="region"]');
+    // Only a bounded module beginning with this heading is safe to exclude.
+    // Never promote a page-wide wrapper into an exclusion scope.
+    if (scope.length && scope.find('h3').first().get(0) === element) moduleScopes.add(scope.get(0)!);
   });
   $('h3').each((_, element) => {
     const heading = $(element);
+    if (heading.parents().toArray().some(parent => moduleScopes.has(parent))) return;
     // Correction and related-query widgets are navigation, not organic pages.
     const headingText = normalizeText(heading.text()).trim();
-    if (/^(?:lide take hledaji|souvisejici (?:dotazy|vyhledavani|hledani))$/.test(headingText)
+    if (relatedHeading.test(headingText)
       || (heading.find('a[data-e-a="accept"]').length && /^hledali jsme\b/.test(headingText))) return;
     const family = heading.closest('[data-e-b-n]').attr('data-e-b-n')?.split('~')[0];
     if (family && adFamilies.has(family)) return;
@@ -174,79 +155,6 @@ export function parseSeznam(html: string): SearchResult[] {
   return results;
 }
 
-interface RankedResult { result: SearchResult; score: number; correctedQuery?: string }
-
-function rankProviderResults(pages: ProviderResult[], query: string): RankedResult[] {
-  const siteFilters: Array<{ hostname: string; pathname: string; excluded: boolean }> = [];
-  const proseQuery = query.replace(/(^|\s)(-?)site:([^\s]+)/gi, (_match, whitespace, excluded, target) => {
-    try {
-      const site = new URL(/^https?:\/\//i.test(target) ? target : `https://${target}`);
-      siteFilters.push({ hostname: site.hostname.replace(/^www\./, '').toLowerCase(), pathname: site.pathname.replace(/\/$/, ''), excluded: Boolean(excluded) });
-    } catch { return _match; }
-    return whitespace;
-  }).trim();
-  let navigationHost: string | undefined;
-  if (/^(?:https?:\/\/)?(?:www\.)?[a-z0-9-]+(?:\.[a-z0-9-]+)+(?:\/\S*)?$/i.test(proseQuery)) {
-    try { navigationHost = new URL(/^https?:\/\//i.test(proseQuery) ? proseQuery : `https://${proseQuery}`).hostname.replace(/^www\./, '').toLowerCase(); } catch { /* Use text relevance. */ }
-  }
-  // Dotted API names such as Array.prototype.sort are text queries unless a
-  // provider actually returned the corresponding host as a navigation result.
-  if (navigationHost && !pages.some(provider => provider.results.some(result => {
-    try {
-      const host = new URL(result.url).hostname.replace(/^www\./, '').toLowerCase();
-      return host === navigationHost || host.endsWith(`.${navigationHost}`);
-    } catch { return false; }
-  }))) navigationHost = undefined;
-  const queryTerms = (value: string) => {
-    const words = [...new Set((normalizeText(value).match(/[\p{L}\p{N}]+/gu) || []).filter(t => !STOP_WORDS.has(t)))];
-    const subjects = words.filter(word => !QUERY_INTENT_WORDS.has(word));
-    return subjects.length ? subjects : words;
-  };
-  const seen = new Map<string, RankedResult>();
-  for (const page of pages) {
-    // Search engines may already have corrected the submitted typo. Validate
-    // that advertised correction before using it to judge their actual results.
-    const correctedQuery = page.correctedQuery && isConservativeSpellingCorrection(query, page.correctedQuery) ? page.correctedQuery : undefined;
-    const effectiveQuery = correctedQuery || proseQuery;
-    const terms = queryTerms(effectiveQuery);
-    const tokens = navigationHost ? [] : [...new Set(terms.map(relevanceTerm))];
-    // Space X / SpaceX and You Tube / YouTube are identical lexical names.
-    // Require the entire joined name, never a substring or a fuzzy short token.
-    const joinedName = terms.length > 1 && terms.every(term => /^[\p{L}]+$/u.test(term)) ? relevanceTerm(terms.join('')) : undefined;
-    page.results.forEach((result, index) => {
-      const url = canonicalResultUrl(result.url);
-      if (!url) return;
-      const parsed = new URL(url);
-      const hostname = parsed.hostname.replace(/^www\./, '').toLowerCase();
-      const matchesHost = (host: string) => hostname === host || hostname.endsWith(`.${host}`);
-      if (navigationHost && !matchesHost(navigationHost)) return;
-      if (siteFilters.some(site => {
-        const match = matchesHost(site.hostname) && (!site.pathname || parsed.pathname.startsWith(site.pathname));
-        return site.excluded ? match : !match;
-      })) return;
-      const title = normalizeText(result.title);
-      const text = relevanceWords(`${result.title} ${result.snippet} ${hostname} ${parsed.pathname}`);
-      const titleWords = relevanceWords(result.title);
-      const joinedMatch = joinedName && text.has(joinedName);
-      const hits = joinedMatch ? tokens.length : tokens.filter(token => text.has(token)).length;
-      if (tokens.length && hits < Math.min(2, tokens.length)) return;
-      const titleHits = joinedName && titleWords.has(joinedName) ? tokens.length : tokens.filter(token => titleWords.has(token)).length;
-      let score = hits * 15 + titleHits * 12 + 10 / (index + 1);
-      if (effectiveQuery && title.includes(normalizeText(effectiveQuery))) score += 30;
-      if (correctedQuery) score -= 5;
-      if (navigationHost) score += hostname === navigationHost ? 100 : 50;
-      if (page.source === 'bing-rss') score -= 12;
-      if (/wikipedia\.org$/.test(new URL(url).hostname)) score -= 4;
-      const previous = seen.get(url);
-      if (!previous || score > previous.score) seen.set(url, { result: { ...result, url }, score, correctedQuery });
-    });
-  }
-  return [...seen.values()].sort((a, b) => b.score - a.score || a.result.url.localeCompare(b.result.url));
-}
-
-export function rankResults(pages: ProviderResult[], query: string): SearchResult[] {
-  return rankProviderResults(pages, query).map(item => item.result);
-}
 
 interface Source { source: ProviderName; url: URL; parse: (body: string) => SearchResult[] }
 function sourceUrls(query: string, options: SearchOptions): Source[] {
@@ -312,7 +220,7 @@ export async function searchWeb(query: string, page = 1, partialOptions: Partial
     const body = await response.text();
     const results = provider.parse(body);
     if (classifySearchResponse(provider.source, body, results.length) === 'unavailable') throw new Error('Search provider unavailable');
-    return { source: provider.source, results, correctedQuery: parseProviderSpellingCorrection(provider.source, body, query) };
+    return { source: provider.source, results, correctedQuery: parseProviderSpellingCorrection(provider.source, body, query), offset: Number(provider.url.searchParams.get('from') || 0) };
   };
   const requests = providers.map(provider => fetchProvider(provider));
   if (process.env.BRAVE_SEARCH_API_KEY) requests.push(fetchBrave(query, options, fetcher));
@@ -336,6 +244,39 @@ export async function searchWeb(query: string, page = 1, partialOptions: Partial
     if (configurationError) throw configurationError.reason;
     throw Object.assign(new Error('Vyhľadávacie zdroje sú dočasne nedostupné. Skúste to znova.'), { status: 502 });
   }
+  // Some providers put only a few organic links on their opening page. Retrieve
+  // further real result pages for the same query instead of weakening relevance.
+  // Two bounded parallel batches also let dense single-host pages gain variety.
+  const degraded = successful.length < requests.length;
+  const firstFallback = successful.find(source => source.source === 'seznam' && source.results.length);
+  const explicitSite = /(?:^|\s)-?site:|^(?:https?:\/\/)?(?:www\.)?[a-z0-9-]+\.[a-z]{2,}(?:\/\S*)?$/i.test(query);
+  // Use the same retrieval plan for every page: a new, higher-scoring candidate
+  // discovered only on page two would otherwise shift pagination and repeat rows.
+  const targetCount = PAGE_SIZE + 1;
+  const needsMore = () => {
+    const rows = rankResults(successful, query);
+    const hosts = new Set(rows.slice(0, PAGE_SIZE).map(row => resultDomain(new URL(row.url).hostname)));
+    return rows.length < targetCount || (!explicitSite && hosts.size < 5);
+  };
+  let supplementalFailure = false;
+  // A failed opening response already used its retry budget. Genuine empty
+  // searches are final and must not cause repeated upstream requests either.
+  if (firstFallback && fallbackFailure?.status === 'fulfilled') {
+    for (let offset = 10; offset <= 30 && needsMore(); offset += 20) {
+      const extra = await Promise.allSettled([offset, offset + 10].map(from => {
+        const provider = providers[fallbackIndex];
+        const url = new URL(provider.url);
+        url.searchParams.set('from', String(from));
+        return fetchProvider({ ...provider, url }, 1800);
+      }));
+      if (options.signal?.aborted) throw options.signal.reason || new DOMException('Aborted', 'AbortError');
+      for (const response of extra) {
+        if (response.status === 'fulfilled') successful.push(response.value);
+        else supplementalFailure = true;
+      }
+      if (extra.every(response => response.status === 'rejected' || response.value.results.length === 0)) break;
+    }
+  }
   const ranked = rankProviderResults(successful, query);
   const start = (page - 1) * PAGE_SIZE;
   const selected = ranked.slice(start, start + PAGE_SIZE);
@@ -345,8 +286,8 @@ export async function searchWeb(query: string, page = 1, partialOptions: Partial
   return {
     results, overview: correctedQuery ? null : overview,
     hasMore: ranked.length > start + PAGE_SIZE, elapsedMs: Math.round(performance.now() - started),
-    sources: successful.filter(source => source.results.length).map(source => source.source),
-    degraded: successful.length < requests.length,
+    sources: [...new Set(successful.filter(source => source.results.length).map(source => source.source))],
+    degraded: degraded || supplementalFailure,
     ...(correctedQuery ? { correctedQuery } : {}),
   };
 }

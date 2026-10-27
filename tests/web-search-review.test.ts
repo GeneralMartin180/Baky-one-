@@ -44,7 +44,8 @@ test('real Seznam structures retain individual snippets and ignore unrelated pag
   assert.equal(results[0].url, 'https://www.w3schools.com/js/js_array_sort.asp');
   assert.match(results[0].snippet, /Well organized/);
   assert.ok(!results[0].snippet.includes('Ultra tiny library'));
-  assert.equal(rankResults([{ source: 'seznam', results }], 'javascript array sort').length, 2);
+  // The library row lacks the requested JavaScript subject in its own metadata.
+  assert.equal(rankResults([{ source: 'seznam', results }], 'javascript array sort').length, 1);
 });
 
 test('real DuckDuckGo Lite result rows decode destinations and their own snippets', () => {
