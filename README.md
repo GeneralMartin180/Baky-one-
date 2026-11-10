@@ -1,6 +1,6 @@
 # Baky One
 
-Baky One is a modern, open-source search engine built by Baky OS as part of its ecosystem. It brings web pages, images, videos, YouTube Shorts, and news into a Slovak-language interface for desktop and mobile. The project is designed around privacy and can be run on your own server.
+Baky One is a modern, open-source search engine built and owned by Baky OS as part of its ecosystem. It brings web pages, images, videos, YouTube Shorts, and news into a Slovak-language interface for desktop and mobile. The project is designed around privacy and can be run on your own server.
 
 [Try Baky One](https://baky-one.vercel.app/) · [Explore Baky OS](https://www.bakyos.com/)
 
@@ -82,6 +82,8 @@ The hosted version uses Vercel. It runs `npm ci` and `npm run build:vercel` to p
 
 Open an issue for a bug or feature idea, or send a pull request. For search issues, include the query, region, filters, and the result you expected. Please use an example you’re comfortable sharing publicly.
 
-## License
+## License and ownership
 
-Baky One is released under the [MIT License](LICENSE).
+Baky OS owns the Baky One project and holds its copyright. [bakyos.com](https://www.bakyos.com/)
+
+Copyright © 2026 Baky OS. Baky One is released under the [MIT License](LICENSE).
