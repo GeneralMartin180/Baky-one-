@@ -1,4 +1,10 @@
-# Baky One Search
+# Baky One
+
+Baky One is a modern, open-source search engine designed to protect your privacy. It’s built by [Baky OS](https://www.bakyos.com/) as part of its ecosystem.
+
+[Try Baky One](https://baky-one.vercel.app/)
+
+![Baky One on desktop and mobile](docs/baky-one-preview.png)
 
 React rozhranie a spoločné Node API pre webové výsledky, obrázky, YouTube a správy. Vyžaduje Node.js 24 a npm 11. Závislosti sú uzamknuté v `package-lock.json`.
 
