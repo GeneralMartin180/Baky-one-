@@ -1,53 +1,87 @@
 # Baky One
 
-Baky One is a modern, open-source search engine designed to protect your privacy. It’s built by [Baky OS](https://www.bakyos.com/) as part of its ecosystem.
+Baky One is a modern, open-source search engine built by Baky OS as part of its ecosystem. It brings web pages, images, videos, YouTube Shorts, and news into a Slovak-language interface for desktop and mobile. The project is designed around privacy and can be run on your own server.
 
-[Try Baky One](https://baky-one.vercel.app/)
+[Try Baky One](https://baky-one.vercel.app/) · [Explore Baky OS](https://www.bakyos.com/)
 
 ![Baky One on desktop and mobile](docs/baky-one-preview.png)
 
-React rozhranie a spoločné Node API pre webové výsledky, obrázky, YouTube a správy. Vyžaduje Node.js 24 a npm 11. Závislosti sú uzamknuté v `package-lock.json`.
+## What you can do
+
+- **Search across formats.** Switch between web results, images, videos, Shorts, and news without retyping your query.
+- **Refine your results.** Choose Slovakia, Czechia, Europe, or worldwide as your search region. Use date filters and SafeSearch where supported by the source.
+- **Find the right website.** Baky One ranks links using the query, page title, and destination domain. It also reduces duplicate links and repeated results from the same domain.
+- **Read a quick overview.** Enable the source overview to see a Wikipedia summary with a link to the original article when a matching article is available.
+- **Catch up on mobile.** The mobile homepage includes publisher news and informational quotes for Microsoft, the S&P 500, and the Nasdaq Composite. Quotes may be delayed or reflect the last trading session.
+- **Explore the Baky OS ecosystem.** The app menu includes Baky OS, Baky AI, Baky Finance, and Baky News. The mobile AI Mode shortcut opens Baky AI.
+
+## How search works
+
+Baky One combines web results from DuckDuckGo, Bing, and Seznam. The server requests results from multiple sources in parallel, then ranks and deduplicates the links. It can fetch more source pages when the first page is sparse or several results come from the same domain. The first page shows up to ten relevant links.
+
+When a provider explicitly suggests a spelling correction, Baky One checks it before using those results. The check protects model numbers, search operators, and quoted phrases. The interface shows the corrected query when it uses corrected results. Availability, coverage, and response times depend on the upstream sources. When a source fails, Baky One can show results from the sources that answered.
+
+## Privacy
+
+Baky One keeps the active search session in browser memory. The app clears it when the tab is hidden or the page is left. The Escape button on the results page also clears the active search and attempts to open AccuWeather. Search queries stay out of browser storage, application caches, and application logs. Search responses use `Cache-Control: no-store`.
+
+The server sends queries to external search providers and, where applicable, overview sources. Hosting and third-party services can process requests and keep their own records. Images and embedded players loaded directly from third-party websites can see your browser’s IP address. Voice input, when available, uses your browser’s speech recognition service.
+
+## Run Baky One locally
+
+You’ll need **Node.js 24** and **npm 11**.
 
 ```sh
+git clone https://github.com/GeneralMartin180/Baky-one-.git baky-one
+cd baky-one
 npm ci
 npm run dev
 ```
 
-Lokálne sa otvorí port 3000; voliteľnú konfiguráciu z `.env.example` možno uložiť do `.env.local`. Základné vyhľadávanie funguje bez API kľúča. Voliteľný `BRAVE_SEARCH_API_KEY` pridá licencovaný webový zdroj. Kľúče patria iba na server, nikdy do premenných s prefixom `VITE_`.
+Open [http://localhost:3000](http://localhost:3000). Basic search works without an API key. For optional settings, copy [`.env.example`](.env.example) to `.env.local`.
+
+- `PORT` changes the local server port.
+- `BRAVE_SEARCH_API_KEY` adds Brave Search as a web result source. Keep it on the server.
+- `PROXY_URL`, `HTTP_PROXY`, and `HTTPS_PROXY` configure an HTTP proxy for server requests.
+- `TOR_PROXY_URL` takes precedence over the HTTP proxy. Set `SEARCH_NETWORK_MODE=tor_socks` to require a SOCKS connection. Requests fail if that connection is unavailable.
+
+## Code and tests
+
+The frontend uses React, TypeScript, and Vite. The Node.js API uses Express and shares the same handlers between local runs and the Vercel deployment.
+
+- [`src/components/`](src/components/) contains the homepage, search interface, and result views.
+- [`src/serverApp.ts`](src/serverApp.ts) defines the API routes and request handling.
+- [`src/services/webSearchService.ts`](src/services/webSearchService.ts) gathers and ranks web results using [`searchRanking.ts`](src/services/searchRanking.ts).
+- [`tests/`](tests/) covers the API, search ranking, provider failures, privacy behavior, and frontend interactions.
+
+Run the type checker and test suite:
 
 ```sh
 npm run lint
 npm test
+```
+
+Build and run the production version locally:
+
+```sh
 npm run build
 npm start
 ```
 
-`lint` vykonáva typovú kontrolu TypeScriptu. Testy zahŕňajú API, SSRF/DNS, HTTP/SOCKS proxy, celé telo odpovede, vyhľadávacie parsery, stránkovanie, stav Reactu a prístupnosť dialógov. `npm start` spustí produkčný server, `PORT` mení lokálny port.
-
-Vercel používa `npm ci` a `npm run build:vercel`. Build Output API obsahuje statické súbory a jednu samostatne zabalenú Node.js funkciu; rovnaké API handlery obsluhujú localhost aj Vercel. Funkcia nepotrebuje pri spustení načítavať zdrojové TypeScript importy. Región funkcie je Frankfurt (`fra1`). Pri pushnutí produkčnej vetvy nasadenie zabezpečuje existujúca Git integrácia.
+For a live check against the running local app, use `npm run test:live`. Add a site URL to check another deployment and `--media` to include media endpoints.
 
 ```sh
-node scripts/smoke.mjs https://baky-one.vercel.app --media
+npm run test:live -- https://baky-one.vercel.app --media
 ```
 
-Živá skúška kontroluje reálne webové výsledky pre viac typov dotazov, odmietnutie nesprávneho vstupu/SSRF a voliteľne obrázky, videá, Shorts a správy. Parametrom `--output=.audit-evidence/post.json` uloží merania lokálne. Dostupnosť a rýchlosť externých vyhľadávacích zdrojov závisia od ich prevádzky a limitov; pri výpadku sa zobrazí chyba, nie vymyslené portály alebo Wikipedia ako náhrada celého webu.
+## Deployment
 
-Vyhľadávanie rozlišuje potvrdené nulové výsledky od blokovania alebo neznámeho HTML poskytovateľa. Pri prechodnom zlyhaní doplnkového zdroja vykoná jeden krátky opakovaný pokus. Seznam dopĺňa aj globálne vyhľadávanie, ale nepoužíva sa na obídenie zvoleného časového filtra. Hodnotenie rozpoznáva bežné slovenské a české tvary slov a vyžaduje celé slová pri krátkych názvoch.
+The hosted version uses Vercel. It runs `npm ci` and `npm run build:vercel` to publish the static frontend and a bundled Node.js function. The project’s deployment settings are in [`vercel.json`](vercel.json).
 
-Prvá strana zobrazuje najviac desať skutočných výsledkov. Pri nedostatku odkazov alebo nezávislých domén sa načítajú najviac štyri ďalšie stránky zdroja v dvoch súbežných dávkach. Dotaz a filtre sa nemenia. Radenie zohľadňuje zhodu výrazu, názvu a domény, zachováva modelové čísla a presné frázy, spája sledovacie duplicity a obmedzuje opakovanie jednej domény. Vložené mediálne karusely, dlhé kópie oficiálneho popisu a generické používateľské projekty nenahrádzajú relevantné webové odkazy. Stránkovanie používa rovnaký plán získavania výsledkov pre každú stranu.
+## Contributing
 
-Ak zdroj výslovne opraví preklep, vyhodnotia sa jeho reálne výsledky podľa overenej opravy a rozhranie zobrazí „Výsledky pre…“. Oprava musí zachovať význam, čísla a modely; nepoužíva sa na zmenu operátorov či úvodzoviek. Nepridáva ďalšiu sieťovú požiadavku ani slovník vymyslených výsledkov. Rozpoznajú sa aj medzery v názvoch, napríklad `space x` / `SpaceX`. Prázdna odpoveď pri nedostupnosti časti zdrojov ponúka opakovanie namiesto definitívneho tvrdenia, že žiadne stránky neexistujú; neplatný formát API sa zobrazí ako chyba.
+Open an issue for a bug or feature idea, or send a pull request. For search issues, include the query, region, filters, and the result you expected. Please use an example you’re comfortable sharing publicly.
 
-Pri priamom hľadaní názvu Baky OS, Baky AI, Baky Finance alebo Baky News sa overí aj príslušná oficiálna stránka. Tento zdroj vracia iba titulok a popis z aktuálne načítaného HTML; pri chybe stránky nevytvorí náhradný výsledok a pri časovom filtri sa nepoužíva. Nejde o uložený adresár výsledkov. Aktívny časový filter je viditeľný a používateľ ho môže výslovne zrušiť.
+## License
 
-Dotazy sa neukladajú do aplikačných cache, histórie ani aplikačných logov. Server ich počas požiadavky odosiela externým poskytovateľom. Hosting a poskytovatelia môžu spracúvať prevádzkové záznamy podľa vlastných pravidiel. Obrázky a prehrávače načítané priamo z cudzích webov vidia IP prehliadača. SafeSearch sa odovzdáva podporovaným vyhľadávacím zdrojom; Wikipedia a Google News RSS neposkytujú garantované filtrovanie nevhodného obsahu.
-
-Logá webov sa načítavajú cez `/api/favicon` z ikonovej služby DuckDuckGo. Dostáva iba doménu webu, nie vyhľadávací dotaz ani IP prehliadača. Ak logo chýba alebo zdroj neodpovedá, zobrazí sa začiatočné písmeno názvu webu.
-
-Mobilná titulná stránka načítava cez `/api/markets` informačné ceny Microsoftu (MSFT), S&P 500 a Nasdaq Composite z Yahoo Finance. Pri každej cene je čas skutočnej kotácie; mimo obchodovania môže ísť o poslednú obchodnú seansu a údaje môžu byť oneskorené. Výpadok zdroja sa označí ako nedostupný údaj, bez náhradných vymyslených cien. Požiadavky obsahujú iba tieto tri pevné symboly, bez vyhľadávacieho dotazu používateľa.
-
-Pod burzou mobilná stránka zobrazuje skutočné správy z oficiálnych RSS BBC News a The Guardian, pre Slovensko aj Aktuality.sk. Zdroje sa medzi kartami striedajú; fotografie idú cez bezpečný obrazový proxy. Google News sa použije iba pri výpadku všetkých týchto feedov. Odkaz AI Mode otvorí Baky AI. Novinky a burza sa na počítači automaticky nenačítavajú; pri odchode z mobilnej stránky sa rozpracované požiadavky zrušia. Mobilná titulná stránka nepridáva obrázkový skener ani nefunkčné akcie; mikrofón sa zobrazí iba v prehliadači s podporovaným rozpoznávaním hlasu.
-
-Voliteľné HTTP proxy nastavuje `PROXY_URL`/`HTTPS_PROXY`/`HTTP_PROXY`. `TOR_PROXY_URL` alebo `SEARCH_NETWORK_MODE=tor_socks` vyžaduje funkčné SOCKS pripojenie a nikdy neprechádza potichu na direct. Proxy stav ani chyby nezverejňujú prihlasovacie údaje. Bezpečný obrazový proxy endpoint povoľuje len určené HTTPS obrazové domény, verejné DNS adresy a raster do 2 MB; v proxy režime sa odmietne, keď nemožno zaručiť kontrolu cieľovej DNS adresy.
-
-Licencia projektu: [MIT](LICENSE).
+Baky One is released under the [MIT License](LICENSE).
