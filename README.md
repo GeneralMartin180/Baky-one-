@@ -9,6 +9,7 @@ Baky One is a modern, open-source search engine built and owned by Baky OS as pa
 ## What you can do
 
 - **Search across formats.** Switch between web results, images, videos, Shorts, and news without retyping your query.
+- **See suggestions as you type.** Pick a suggestion with the keyboard, mouse, or touch on the homepage and results page.
 - **Refine your results.** Choose Slovakia, Czechia, Europe, or worldwide as your search region. Use date filters and SafeSearch where supported by the source.
 - **Find the right website.** Baky One ranks links using the query, page title, and destination domain. It also reduces duplicate links and repeated results from the same domain.
 - **Read a quick overview.** Enable the source overview to see a Wikipedia summary with a link to the original article when a matching article is available.
@@ -25,7 +26,7 @@ When a provider explicitly suggests a spelling correction, Baky One checks it be
 
 Baky One keeps the active search session in browser memory. The app clears it when the tab is hidden or the page is left. The Escape button on the results page also clears the active search and attempts to open AccuWeather. Search queries stay out of browser storage, application caches, and application logs. Search responses use `Cache-Control: no-store`.
 
-The server sends queries to external search providers and, where applicable, overview sources. Hosting and third-party services can process requests and keep their own records. Images and embedded players loaded directly from third-party websites can see your browser’s IP address. Voice input, when available, uses your browser’s speech recognition service.
+The server sends queries to external search providers and, where applicable, overview sources. Search suggestions send partial queries to DuckDuckGo through the server while you type. Hosting and third-party services can process requests and keep their own records. Images and embedded players loaded directly from third-party websites can see your browser’s IP address. Voice input, when available, uses your browser’s speech recognition service.
 
 ## Run Baky One locally
 

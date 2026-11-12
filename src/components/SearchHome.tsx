@@ -7,6 +7,8 @@ import bakyLogo from '../assets/baky-one-256.png';
 import { useVoiceSearch } from './useVoiceSearch';
 import MobileHomeFeed from './MobileHomeFeed';
 import SupportProject from './SupportProject';
+import SearchSuggestions from './SearchSuggestions';
+import { useSearchSuggestions } from './useSearchSuggestions';
 
 export function BakyOneLogo({ className = 'w-10 h-10' }: { className?: string }) {
   return (
@@ -49,16 +51,22 @@ export default function SearchHome({
     media.addEventListener('change', update);
     return () => media.removeEventListener('change', update);
   }, []);
+  const suggestions = useSearchSuggestions({ query, onChange: setQuery, onSelect: submitQuery, settings });
+
+  function submitQuery(value: string) {
+    suggestions.dismiss();
+    const trimmed = value.trim();
+    if (trimmed) onSearch(trimmed, aiMode, searchTab);
+  }
+
   const { isListening, voiceError, startVoiceSearch, isSupported: voiceSupported } = useVoiceSearch((text) => {
     setQuery(text);
-    onSearch(text, aiMode, searchTab);
+    submitQuery(text);
   });
 
-  const handleSubmit = (e?: FormEvent) => {
-    if (e) e.preventDefault();
-    if (query.trim()) {
-      onSearch(query.trim(), aiMode, searchTab);
-    }
+  const handleSubmit = (event: FormEvent) => {
+    event.preventDefault();
+    submitQuery(query);
   };
 
   return (
@@ -183,10 +191,10 @@ export default function SearchHome({
           </div>
 
           {/* Search Input Box */}
-          <form onSubmit={handleSubmit} className="w-full" autoComplete="off" noValidate>
+          <form onSubmit={handleSubmit} role="search" className="w-full" autoComplete="off" noValidate>
             <div
               id="search-home-search-pill"
-              className="baky-search-field w-full flex items-center bg-[#f3f4f5] sm:bg-white border border-transparent sm:border-[#dfe1e5] hover:shadow-[0_1px_6px_rgba(32,33,36,0.14)] rounded-full pl-5 pr-3 sm:px-4 h-14 sm:h-[50px] transition-all duration-150"
+              className="baky-search-field relative w-full flex items-center bg-[#f3f4f5] sm:bg-white border border-transparent sm:border-[#dfe1e5] hover:shadow-[0_1px_6px_rgba(32,33,36,0.14)] rounded-full pl-5 pr-3 sm:px-4 h-14 sm:h-[50px] transition-all duration-150"
             >
               {/* Search Glass Icon */}
               <button type="submit" aria-label="Hľadať" className="hidden sm:flex mr-3 h-8 w-5 items-center justify-center text-[#9aa0a6] shrink-0"><Search className="w-5 h-5" /></button>
@@ -197,7 +205,7 @@ export default function SearchHome({
                 name="ephemeral_home_search_query"
                 type="text"
                 value={query}
-                onChange={(e) => setQuery(e.target.value)}
+                {...suggestions.inputProps}
                 placeholder={searchTab === 'images' ? 'Hľadať obrázky…' : isMobile ? 'Hľadať' : ''}
                 aria-label={searchTab === 'images' ? 'Hľadaný výraz pre obrázky' : 'Hľadaný výraz'}
                 className="w-full bg-transparent text-[#202124] text-[16px] outline-none min-w-0 pr-2"
@@ -209,7 +217,6 @@ export default function SearchHome({
                 data-lpignore="true"
                 data-form-type="other"
                 data-1p-ignore="true"
-                aria-autocomplete="none"
               />
 
               {/* Clear Button */}
@@ -217,6 +224,7 @@ export default function SearchHome({
                 <button
                   type="button"
                   onClick={() => {
+                    suggestions.dismiss();
                     setQuery('');
                     inputRef.current?.focus();
                   }}
@@ -247,6 +255,7 @@ export default function SearchHome({
                   size="md"
                 />
               </div>
+              <SearchSuggestions {...suggestions.listProps} />
             </div>
 
             {/* Centered Search Action Buttons */}

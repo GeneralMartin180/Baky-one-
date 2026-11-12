@@ -424,6 +424,127 @@ test('homepage image mode and microphone submit the recognized query as an image
   } finally { await env.close(); }
 });
 
+async function editSearchInput(input: HTMLInputElement, value: string) {
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!.call(input, value);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+}
+
+async function waitForSuggestions() {
+  await act(async () => { await new Promise<void>((resolve) => setTimeout(resolve, 250)); });
+}
+
+test('homepage autocomplete debounces edits, discards stale suggestions, and keeps image mode on keyboard selection', async () => {
+  const { default: SearchHome } = await loadComponent('src/components/SearchHome.tsx');
+  const env = await setup();
+  const searches: unknown[][] = [];
+  const requests: Array<{ url: URL; signal: AbortSignal; resolve: (value: Response) => void }> = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = ((url: string, init: RequestInit) => new Promise<Response>((resolve) => {
+    requests.push({ url: new URL(url, window.location.href), signal: init.signal as AbortSignal, resolve });
+  })) as typeof fetch;
+  try {
+    await act(async () => env.root.render(React.createElement(SearchHome, {
+      onSearch: (...args: unknown[]) => searches.push(args), aiMode: true, settings: { ...settings, region: 'cz', safeSearch: false },
+    })));
+    const images = Array.from(document.querySelectorAll('button')).find((button) => button.textContent?.trim() === 'Obrázky')!;
+    await act(async () => images.click());
+    const input = document.querySelector('#search-home-input') as HTMLInputElement;
+    assert.equal(input.getAttribute('role'), 'combobox');
+    assert.equal(document.activeElement, input);
+    await editSearchInput(input, 'ves');
+    await editSearchInput(input, 'vesm');
+    assert.equal(requests.length, 0);
+    await waitForSuggestions();
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0].url.pathname, '/api/suggestions');
+    assert.equal(requests[0].url.searchParams.get('q'), 'vesm');
+    assert.equal(requests[0].url.searchParams.get('region'), 'cz');
+    assert.equal(requests[0].url.searchParams.get('safeSearch'), '0');
+
+    await editSearchInput(input, 'vesmí');
+    assert.equal(requests[0].signal.aborted, true);
+    await act(async () => requests[0].resolve(response({ suggestions: ['vesmírne lode'] })));
+    assert.equal(document.querySelector('[role="listbox"]'), null);
+    await waitForSuggestions();
+    assert.equal(requests.length, 2);
+    assert.equal(requests[1].url.searchParams.get('q'), 'vesmí');
+    await act(async () => requests[1].resolve(response({ suggestions: ['vesmír', 'vesmírne stanice'] })));
+    const list = document.querySelector('[role="listbox"]')!;
+    const choices = [...list.querySelectorAll('[role="option"]')];
+    assert.equal(input.getAttribute('aria-expanded'), 'true');
+    assert.equal(input.getAttribute('aria-controls'), list.id);
+    assert.deepEqual(choices.map((choice) => choice.textContent?.trim()), ['vesmír', 'vesmírne stanice']);
+
+    await act(async () => input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true })));
+    assert.equal(input.getAttribute('aria-activedescendant'), choices[0].id);
+    assert.equal(document.activeElement, input);
+    await act(async () => {
+      const enter = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
+      input.dispatchEvent(enter);
+      if (!enter.defaultPrevented) input.form!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    });
+    assert.deepEqual(searches, [['vesmír', true, 'images']]);
+    assert.equal(input.getAttribute('aria-expanded'), 'false');
+  } finally { await env.close(); globalThis.fetch = originalFetch; }
+});
+
+test('results autocomplete waits for editing, closes on blur, and keeps the current results category when clicked', async () => {
+  const { default: SearchResults } = await loadComponent('src/components/SearchResults.tsx');
+  const env = await setup();
+  const searches: URL[] = [];
+  const suggestions: Array<{ signal: AbortSignal; resolve: (value: Response) => void }> = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = ((url: string, init: RequestInit) => {
+    const request = new URL(url, window.location.href);
+    if (request.pathname === '/api/suggestions') {
+      return new Promise<Response>((resolve) => suggestions.push({ signal: init.signal as AbortSignal, resolve }));
+    }
+    searches.push(request);
+    return Promise.resolve(response({ images: [] }));
+  }) as typeof fetch;
+  function Results() {
+    const [query, setQuery] = React.useState('Praha');
+    return React.createElement(SearchResults, props({ initialQuery: query, initialTab: 'images', onSearchAgain: setQuery }));
+  }
+  try {
+    await act(async () => env.root.render(React.createElement(Results)));
+    const input = document.querySelector('#search-input') as HTMLInputElement;
+    await act(async () => input.focus());
+    await waitForSuggestions();
+    assert.equal(suggestions.length, 0);
+
+    await editSearchInput(input, 'brat');
+    await waitForSuggestions();
+    assert.equal(suggestions.length, 1);
+    await act(async () => input.blur());
+    assert.equal(suggestions[0].signal.aborted, true);
+    await act(async () => suggestions[0].resolve(response({ suggestions: ['bratislava'] })));
+    assert.equal(document.querySelector('[role="listbox"]'), null);
+
+    await act(async () => input.focus());
+    await editSearchInput(input, 'bra');
+    await waitForSuggestions();
+    await act(async () => suggestions.at(-1)!.resolve(response({ suggestions: ['bratislava'] })));
+    assert.equal(input.getAttribute('aria-expanded'), 'true');
+    await act(async () => input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
+    assert.equal(input.value, 'bra');
+    assert.equal(input.getAttribute('aria-expanded'), 'false');
+    assert.equal(searches.length, 1);
+
+    await editSearchInput(input, 'brati');
+    await waitForSuggestions();
+    await act(async () => suggestions.at(-1)!.resolve(response({ suggestions: ['bratislava počasie'] })));
+    const choice = document.querySelector('[role="option"]') as HTMLElement;
+    await act(async () => choice.click());
+    assert.deepEqual(searches.map((url) => [url.pathname, url.searchParams.get('q')]), [
+      ['/api/images', 'Praha'], ['/api/images', 'bratislava počasie'],
+    ]);
+    assert.equal(input.getAttribute('aria-expanded'), 'false');
+  } finally { await env.close(); globalThis.fetch = originalFetch; }
+});
+
 test('Escape makes one popup attempt even when noopener returns null, and clears only query keys', async () => {
   const privacy = await loadComponent('src/services/privacyEphemeralManager.ts');
   const env = await setup(); let opens = 0; let purges = 0;

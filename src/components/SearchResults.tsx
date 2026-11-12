@@ -10,6 +10,8 @@ import ImageViewerModal from './ImageViewerModal';
 import BakyAiPill from './BakyAiPill';
 import BakyAiOverviewCard from './BakyAiOverviewCard';
 import { useVoiceSearch } from './useVoiceSearch';
+import SearchSuggestions from './SearchSuggestions';
+import { useSearchSuggestions } from './useSearchSuggestions';
 
 interface SearchResultsProps {
   initialQuery: string;
@@ -113,13 +115,16 @@ export default function SearchResults({ initialQuery, initialTab = 'all', search
     return () => { active = false; controller.abort(); };
   }, [requestKey]);
 
-  const submitQuery = (query: string) => {
+  const suggestions = useSearchSuggestions({ query: queryInput, onChange: setQueryInput, onSelect: submitQuery, settings });
+
+  function submitQuery(query: string) {
+    suggestions.dismiss();
     const trimmed = query.trim();
     if (!trimmed) return;
     setCurrentPage(1);
     if (trimmed === initialQuery) setRefresh((value) => value + 1);
     else onSearchAgain(trimmed);
-  };
+  }
   const handleSubmit = (event: FormEvent) => { event.preventDefault(); submitQuery(queryInput); };
   const { isListening, voiceError, startVoiceSearch, isSupported: voiceSupported } = useVoiceSearch((text) => { setQueryInput(text); submitQuery(text); });
   const images = visible.images.filter((image) => Boolean(image.thumbnail));
@@ -131,12 +136,13 @@ export default function SearchResults({ initialQuery, initialTab = 'all', search
         <div className="grid grid-cols-[minmax(0,1fr)_44px] sm:flex items-center gap-x-3 gap-y-4 sm:gap-5 px-4 sm:px-6 md:px-8 pt-3 sm:pt-4 pb-4 sm:pb-3">
           <BrandLogo size="md" onClick={onBackToHome} className="col-start-1 col-span-2 row-start-1 justify-self-center shrink-0" />
           <form onSubmit={handleSubmit} role="search" autoComplete="off" className="col-start-1 col-span-2 row-start-2 sm:flex-1 min-w-0 w-full sm:max-w-[692px]">
-            <div className="baky-search-field flex items-center rounded-full bg-[#f8f9fa] sm:bg-white border border-[#dfe1e5] pl-4 pr-2 h-12 sm:h-11 gap-0.5">
-              <input id="search-input" name="ephemeral_search_query" type="search" value={queryInput} onChange={(event) => setQueryInput(event.target.value)} aria-label="Hľadaný výraz" className="min-w-0 flex-1 w-full bg-transparent text-base outline-none" autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false} data-lpignore="true" data-1p-ignore="true" />
-              {queryInput && <button type="button" onClick={() => setQueryInput('')} aria-label="Vymazať výraz" className="grid place-items-center shrink-0 w-8 h-10 sm:h-8 rounded-full text-[#70757a]"><X className="w-4 h-4" /></button>}
+            <div className="baky-search-field relative flex items-center rounded-full bg-[#f8f9fa] sm:bg-white border border-[#dfe1e5] pl-4 pr-2 h-12 sm:h-11 gap-0.5">
+              <input id="search-input" name="ephemeral_search_query" type="search" value={queryInput} {...suggestions.inputProps} aria-label="Hľadaný výraz" className="min-w-0 flex-1 w-full bg-transparent text-base outline-none" autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false} data-lpignore="true" data-1p-ignore="true" />
+              {queryInput && <button type="button" onClick={() => { suggestions.dismiss(); setQueryInput(''); }} aria-label="Vymazať výraz" className="grid place-items-center shrink-0 w-8 h-10 sm:h-8 rounded-full text-[#70757a]"><X className="w-4 h-4" /></button>}
               {voiceSupported && <button type="button" onClick={startVoiceSearch} aria-label={isListening ? 'Zastaviť hlasové vyhľadávanie' : 'Hlasové vyhľadávanie'} aria-pressed={isListening} title="Hlas rozpoznáva služba vášho prehliadača" className={`grid place-items-center shrink-0 w-8 h-10 sm:h-8 rounded-full ${isListening ? 'text-red-600 animate-pulse' : 'text-[#4285f4]'}`}><Mic className="w-4 h-4" /></button>}
               <button type="submit" aria-label="Hľadať" className="grid place-items-center shrink-0 w-8 h-10 sm:h-8 rounded-full text-[#4285f4]"><Search className="w-5 h-5" /></button>
               <BakyAiPill size="sm" isActive={aiMode} onToggle={onToggleAiMode} className="shrink-0" />
+              <SearchSuggestions {...suggestions.listProps} />
             </div>
           </form>
           <div className="col-start-2 row-start-1 justify-self-end sm:ml-auto relative shrink-0">

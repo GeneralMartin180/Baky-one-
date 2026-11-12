@@ -2,6 +2,7 @@ import express, { type Request, type Response } from 'express';
 import { fetchFufuImages, fetchYouTubeVideos, fetchYouTubeShorts, clearFufuServerCache } from './services/fufuV12Scraper.ts';
 import { scrapeTrendingNews, scrapeNewsForQuery } from './services/newsScraper.ts';
 import { searchWeb } from './services/webSearchService.ts';
+import { fetchSearchSuggestions } from './services/searchSuggestions.ts';
 import { getNetworkStatus } from './services/serverTransport.ts';
 import { ApiInputError, readCategory, readPage, readQuery, readSearchOptions } from './services/apiValidation.ts';
 import { fetchNewsImage, ImageProxyError } from './services/imageProxy.ts';
@@ -20,6 +21,7 @@ export interface ApiServices {
     degraded?: boolean;
   }>;
   images(query: string, options: SearchOptions): Promise<SearchResult[]>;
+  suggestions(query: string, options: SearchOptions): Promise<string[]>;
   videos(query: string, options: SearchOptions): Promise<YouTubeVideoItem[]>;
   shorts(query: string, options: SearchOptions): Promise<YouTubeVideoItem[]>;
   news(query: string, options: SearchOptions): Promise<TrendingNewsItem[]>;
@@ -33,6 +35,7 @@ export interface ApiServices {
 
 const defaultServices: ApiServices = {
   searchWeb,
+  suggestions: fetchSearchSuggestions,
   images: fetchFufuImages,
   videos: fetchYouTubeVideos,
   shorts: fetchYouTubeShorts,
@@ -132,6 +135,13 @@ export function createApp(overrides: Partial<ApiServices> = {}) {
     res.json({ ...result, query, page, count: result.results.length, images: [], videos: [], overview: result.overview ?? null });
   }));
 
+  router.get('/suggestions', asyncRoute(async (req, res, signal) => {
+    const query = readQuery(req.query.q);
+    const options = { ...readSearchOptions(req.query), signal };
+    const suggestions = query.length < 2 ? [] : await services.suggestions(query, options);
+    if (!signal.aborted) res.json({ suggestions });
+  }));
+
   for (const [path, key] of [['/images', 'images'], ['/videos', 'videos'], ['/shorts', 'shorts']] as const) {
     router.get(path, asyncRoute(async (req, res, signal) => {
       const query = readQuery(req.query.q);
@@ -173,7 +183,7 @@ export function createApp(overrides: Partial<ApiServices> = {}) {
     res.send(image.body);
   }));
 
-  router.all(['/health', '/fufu-status', '/search', '/images', '/videos', '/shorts', '/news', '/trending', '/markets', '/news-proxy-image', '/favicon'], (_req, res) => {
+  router.all(['/health', '/fufu-status', '/search', '/suggestions', '/images', '/videos', '/shorts', '/news', '/trending', '/markets', '/news-proxy-image', '/favicon'], (_req, res) => {
     res.setHeader('Allow', 'GET, HEAD');
     res.status(405).json({ success: false, error: 'Nepovolená metóda.' });
   });

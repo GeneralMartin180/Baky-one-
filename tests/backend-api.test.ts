@@ -4,6 +4,7 @@ import test from 'node:test';
 import { createApp, type ApiServices } from '../src/serverApp.ts';
 import { ApiInputError, readPage, readQuery, readSearchOptions } from '../src/services/apiValidation.ts';
 import { hasExpectedImageSignature, validateNewsImageUrl } from '../src/services/imageProxy.ts';
+import { fetchSearchSuggestions } from '../src/services/searchSuggestions.ts';
 
 async function withApi(overrides: Partial<ApiServices>, run: (base: string) => Promise<void>) {
   const server = createApp(overrides).listen(0, '127.0.0.1');
@@ -69,6 +70,77 @@ test('shared handlers forward validated options and pagination, with cache preve
       assert.ok(call.options.signal instanceof AbortSignal);
     }
   });
+});
+
+test('suggestions use validated input, skip short queries and keep responses out of caches', async () => {
+  let requests = 0;
+  await withApi({ ...emptyServices(), suggestions: async (query, options) => {
+    requests++;
+    assert.equal(query, 'počas');
+    assert.equal(options.region, 'sk');
+    assert.equal(options.safeSearch, false);
+    assert.ok(options.signal instanceof AbortSignal);
+    return ['počasie bratislava'];
+  } }, async base => {
+    const short = await fetch(base + '/api/suggestions?q=p');
+    assert.deepEqual(await short.json(), { suggestions: [] });
+    const response = await fetch(base + '/api/suggestions?q=po%C4%8Das&region=sk&safeSearch=0');
+    assert.equal(response.status, 200);
+    assert.match(response.headers.get('cache-control') ?? '', /no-store/);
+    assert.equal(response.headers.get('cdn-cache-control'), 'no-store');
+    assert.deepEqual(await response.json(), { suggestions: ['počasie bratislava'] });
+    for (const suffix of ['q=x&q=y', 'q[x]=y', 'q=abc&region=invalid', 'q=abc&safeSearch=invalid']) {
+      assert.equal((await fetch(base + '/api/suggestions?' + suffix)).status, 400);
+    }
+    assert.equal((await fetch(base + '/api/suggestions?q=abc', { method: 'POST' })).status, 405);
+    assert.equal(requests, 1);
+  });
+});
+
+test('suggestions use the SafeSearch endpoint and return only unique matching phrases', async () => {
+  const signal = new AbortController().signal;
+  const results = await fetchSearchSuggestions('pocasi', { safeSearch: true, region: 'sk', timeFilter: 'anytime', signal }, async (input, options) => {
+    const url = new URL(input);
+    assert.equal(url.origin, 'https://safe.duckduckgo.com');
+    assert.equal(url.pathname, '/ac/');
+    assert.equal(url.searchParams.get('q'), 'pocasi');
+    assert.equal(url.searchParams.get('kl'), 'sk-sk');
+    assert.equal(url.searchParams.get('kp'), '1');
+    assert.equal(options?.signal, signal);
+    assert.equal(options?.cache, 'no-store');
+    assert.equal(options?.redirect, 'error');
+    return Response.json([
+      null,
+      { phrase: 2 },
+      { phrase: 'POCASI' },
+      { phrase: 'unrelated suggestion' },
+      { phrase: 'počasie\u202e zlé' },
+      { phrase: 'počasie ' + 'x'.repeat(200) },
+      { phrase: '  Počasie   Bratislava  ' },
+      { phrase: 'pocasie bratislava' },
+      ...Array.from({ length: 8 }, (_, i) => ({ phrase: 'počasie ' + i })),
+    ]);
+  });
+  assert.deepEqual(results, ['Počasie Bratislava', ...Array.from({ length: 6 }, (_, i) => 'počasie ' + i)]);
+});
+
+test('provider failures and invalid payloads produce empty suggestions', async () => {
+  const options = { safeSearch: false, region: 'cz', timeFilter: 'anytime' } as const;
+  for (const response of [
+    () => new Response('', { status: 429 }),
+    () => new Response('invalid JSON'),
+    () => Response.json({ phrase: 'praha' }),
+    () => { throw new Error('unavailable'); },
+  ]) {
+    let requested: URL | undefined;
+    assert.deepEqual(await fetchSearchSuggestions('pra', options, async input => {
+      requested = new URL(input);
+      return response();
+    }), []);
+    assert.equal(requested?.origin, 'https://duckduckgo.com');
+    assert.equal(requested.searchParams.get('kl'), 'cz-cs');
+    assert.equal(requested.searchParams.get('kp'), '-2');
+  }
 });
 
 test('upstream failures are HTTP502, network configuration failures HTTP503, with no internal error or query leakage', async () => {
