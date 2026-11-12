@@ -21,6 +21,41 @@ button, a, input, select, textarea, [tabindex] {
   box-shadow: 0 1px 6px rgb(32 33 36 / 14%);
 }
 
+.baky-search-field:has(> .baky-search-suggestions) {
+  --baky-search-outline: #dadce0;
+  z-index: 30;
+  border-color: var(--baky-search-outline);
+  border-bottom-width: 0;
+  border-radius: 24px 24px 0 0;
+  background-color: #fff;
+  box-shadow: none;
+  filter: drop-shadow(0 5px 12px rgb(32 33 36 / 16%));
+  transition: none;
+}
+
+.baky-search-suggestions {
+  inset-inline: -1px;
+  top: 100%;
+  border: 1px solid var(--baky-search-outline, #dadce0);
+  border-top-width: 0;
+  border-radius: 0 0 24px 24px;
+  background: linear-gradient(#eceef0, #eceef0) center top / calc(100% - 32px) 1px no-repeat #fff;
+  transform-origin: top center;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .baky-search-suggestions {
+    animation: baky-suggestions-open 280ms ease-out;
+  }
+}
+
+@keyframes baky-suggestions-open {
+  0% { transform: scaleY(0.92); }
+  58% { transform: scaleY(1.025); }
+  80% { transform: scaleY(0.992); }
+  100% { transform: scaleY(1); }
+}
+
 .search-category-scroll {
   scrollbar-width: none;
   scroll-padding-inline: 12px;

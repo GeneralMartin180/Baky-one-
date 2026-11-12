@@ -16,7 +16,7 @@ export default function SearchSuggestions({ id, query, items, activeIndex, onSel
       id={id}
       role="listbox"
       aria-label="Návrhy vyhľadávania"
-      className="absolute inset-x-0 top-full z-50 mt-1.5 max-h-[min(21rem,46dvh)] overflow-y-auto overscroll-contain rounded-2xl border border-[#e3e6ea] bg-white px-1.5 py-1.5 shadow-[0_6px_24px_rgba(32,33,36,0.16)] [scrollbar-width:thin]"
+      className="baky-search-suggestions absolute max-h-[min(21rem,46dvh)] overflow-y-auto overscroll-contain px-1.5 py-1.5 [scrollbar-width:thin]"
     >
       {items.map((suggestion, index) => {
         const selected = index === activeIndex;
